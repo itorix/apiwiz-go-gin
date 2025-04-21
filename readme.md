@@ -1,4 +1,4 @@
-# APIWiz Fiber Detect SDK
+# APIWiz Gin Detect SDK
 
 This SDK provides request/response monitoring and tracing capabilities for Fiber applications integrated with APIWiz.
 
