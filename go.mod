@@ -1,11 +1,8 @@
-module github.dev/itorix/apiwiz-go-gin
+module github.com/itorix/apiwiz-go-gin
 
 go 1.19
 
-require (
-	github.com/gin-gonic/gin v1.9.1
-	github.com/google/uuid v1.5.0
-)
+require github.com/gin-gonic/gin v1.9.1
 
 require (
 	github.com/bytedance/sonic v1.9.1 // indirect

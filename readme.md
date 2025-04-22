@@ -5,7 +5,7 @@ This SDK provides request/response monitoring and tracing capabilities for Fiber
 ## Installation
 
 ```bash
-go get github.dev/itorix/apiwiz-go-gin
+go get github.com/itorix/apiwiz-go-gin
 ```
 
 ## Configuration
@@ -33,8 +33,8 @@ cfg := &config.Config{
 package main
 
 import (
-	"github.dev/itorix/apiwiz-go-gin/pkg/config"
-	"github.dev/itorix/apiwiz-go-gin/pkg/middleware"
+	"github.com/itorix/apiwiz-go-gin/pkg/config"
+	"github.com/itorix/apiwiz-go-gin/pkg/middleware"
 	"github.com/gin-gonic/gin"
 )
 

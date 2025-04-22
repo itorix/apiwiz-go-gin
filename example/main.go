@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.dev/itorix/apiwiz-go-gin/pkg/config"
-	"github.dev/itorix/apiwiz-go-gin/pkg/middleware"
+	"github.com/itorix/apiwiz-go-gin/pkg/config"
+	"github.com/itorix/apiwiz-go-gin/pkg/middleware"
 )
 
 func main() {

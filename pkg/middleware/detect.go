@@ -6,15 +6,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
-	"github.dev/itorix/apiwiz-go-gin/pkg/config"
-	"github.dev/itorix/apiwiz-go-gin/pkg/models"
+
+	"github.com/gin-gonic/gin"
+	"github.com/itorix/apiwiz-go-gin/pkg/config"
+	"github.com/itorix/apiwiz-go-gin/pkg/models"
 )
 
 // Custom response writer to capture the response
