@@ -2,7 +2,10 @@ package middleware
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -256,6 +259,54 @@ func (m *DetectMiddleware) buildComplianceDTO(data *RequestData, originalBody []
 }
 
 func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckDTO) {
+
+	defer func() {
+		if r := recover(); r != nil {
+			// Log the panic
+			// m.logger.Errorf("Recovered from panic in sendComplianceCheck: %v", r)
+		}
+	}()
+
+	if m.config.DecryptData {
+		// Handle request body decryption
+		if checkDTO.Request.RequestBody != "" {
+			// If we have JSON path configured, use it for targeted decryption
+			if m.config.EncryptedFieldPath != "" {
+				checkDTO.Request.RequestBody = m.decryptJSONField(
+					checkDTO.Request.RequestBody,
+					m.config.EncryptedFieldPath,
+					m.config.AES256_KEY,
+					m.config.AES256_IV,
+				)
+			} else {
+				// Fall back to decrypting the entire body
+				plainText, err := GetAESDecrypted(checkDTO.Request.RequestBody, m.config.AES256_KEY, m.config.AES256_IV)
+				if err == nil {
+					checkDTO.Request.RequestBody = plainText
+				}
+			}
+		}
+
+		// Handle response body decryption
+		if checkDTO.Response.ResponseBody != "" {
+			// If we have JSON path configured, use it for targeted decryption
+			if m.config.EncryptedFieldPath != "" {
+				checkDTO.Response.ResponseBody = m.decryptJSONField(
+					checkDTO.Response.ResponseBody,
+					m.config.EncryptedFieldPath,
+					m.config.AES256_KEY,
+					m.config.AES256_IV,
+				)
+			} else {
+				// Fall back to decrypting the entire body
+				plainText, err := GetAESDecrypted(checkDTO.Response.ResponseBody, m.config.AES256_KEY, m.config.AES256_IV)
+				if err == nil {
+					checkDTO.Response.ResponseBody = plainText
+				}
+			}
+		}
+	}
+
 	jsonData, err := json.Marshal(checkDTO)
 	if err != nil {
 		return
@@ -276,4 +327,57 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 	}
 	defer resp.Body.Close()
 
+}
+
+func GetAESDecrypted(encrypted string, transformationKey, initializationVectorString string) (string, error) {
+
+	ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
+	if err != nil {
+		return "", err
+	}
+
+	block, err := aes.NewCipher([]byte(transformationKey))
+	if err != nil {
+		return "", err
+	}
+
+	if len(ciphertext)%aes.BlockSize != 0 {
+		return "", fmt.Errorf("ciphertext is not a multiple of the block size")
+	}
+
+	mode := cipher.NewCBCDecrypter(block, []byte(initializationVectorString))
+	mode.CryptBlocks(ciphertext, ciphertext)
+
+	plaintext := PKCS5UnPadding(ciphertext)
+
+	return string(plaintext), nil
+}
+
+func PKCS5UnPadding(src []byte) []byte {
+	length := len(src)
+	unpadding := int(src[length-1])
+
+	return src[:(length - unpadding)]
+}
+
+func (m *DetectMiddleware) decryptJSONField(jsonStr, jsonPath, keyBase64, ivBase64 string) string {
+	var jsonData map[string]interface{}
+	err := json.Unmarshal([]byte(jsonStr), &jsonData)
+	if err != nil {
+		return jsonStr
+	}
+
+	if strings.HasPrefix(jsonPath, "$.") {
+		fieldName := strings.TrimPrefix(jsonPath, "$.")
+
+		if encryptedValue, ok := jsonData[fieldName].(string); ok {
+			decryptedValue, err := GetAESDecrypted(encryptedValue, keyBase64, ivBase64)
+			if err != nil {
+				return jsonStr
+			}
+			return string(decryptedValue)
+		}
+	}
+
+	return jsonStr
 }
