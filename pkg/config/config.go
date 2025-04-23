@@ -12,7 +12,7 @@ type Config struct {
 	ResponseTimestampHeader string
 	GatewayTypeHeader       string
 	DecryptData             bool
-	AES256_KEY              string
-	AES256_IV               string
+	AES_KEY                 string
+	AES_IV                  string
 	EncryptedFieldPath      string
 }

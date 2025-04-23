@@ -79,22 +79,26 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 		// Process the request through the chain
 		c.Next()
 
-		// Now we have access to both request and response data
-		detectReq := &DetectRequest{
-			Method:       c.Request.Method,
-			URL:          c.Request.URL.String(),
-			Headers:      c.Request.Header,
-			QueryParams:  c.Request.URL.Query(),
-			RequestBody:  string(requestBody),
-			ResponseBody: customWriter.body.String(), // Response body is now available
-			StatusCode:   c.Writer.Status(),          // Final status code is available
-		}
+		ctxCopy := c.Copy()
 
-		// Store the detect request in the context for the Handle function
-		c.Set("detectRequest", detectReq)
+		go func() {
+			// Now we have access to both request and response data
+			detectReq := &DetectRequest{
+				Method:       c.Request.Method,
+				URL:          c.Request.URL.String(),
+				Headers:      c.Request.Header,
+				QueryParams:  c.Request.URL.Query(),
+				RequestBody:  string(requestBody),
+				ResponseBody: customWriter.body.String(), // Response body is now available
+				StatusCode:   c.Writer.Status(),          // Final status code is available
+			}
 
-		// Call Handle after we have all the response data
-		detect.Handle()(c)
+			// Store the detect request in the context for the Handle function
+			ctxCopy.Set("detectRequest", detectReq)
+
+			// Call Handle after we have all the response data
+			detect.Handle()(ctxCopy)
+		}()
 	}
 }
 
@@ -271,11 +275,11 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 				checkDTO.Request.RequestBody = m.decryptJSONField(
 					checkDTO.Request.RequestBody,
 					m.config.EncryptedFieldPath,
-					m.config.AES256_KEY,
-					m.config.AES256_IV,
+					m.config.AES_KEY,
+					m.config.AES_IV,
 				)
 			} else {
-				plainText, err := GetAESDecrypted(checkDTO.Request.RequestBody, m.config.AES256_KEY, m.config.AES256_IV)
+				plainText, err := GetAESDecrypted(checkDTO.Request.RequestBody, m.config.AES_KEY, m.config.AES_IV)
 				if err == nil {
 					checkDTO.Request.RequestBody = plainText
 				}
@@ -287,11 +291,11 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 				checkDTO.Response.ResponseBody = m.decryptJSONField(
 					checkDTO.Response.ResponseBody,
 					m.config.EncryptedFieldPath,
-					m.config.AES256_KEY,
-					m.config.AES256_IV,
+					m.config.AES_KEY,
+					m.config.AES_IV,
 				)
 			} else {
-				plainText, err := GetAESDecrypted(checkDTO.Response.ResponseBody, m.config.AES256_KEY, m.config.AES256_IV)
+				plainText, err := GetAESDecrypted(checkDTO.Response.ResponseBody, m.config.AES_KEY, m.config.AES_IV)
 				if err == nil {
 					checkDTO.Response.ResponseBody = plainText
 				}
