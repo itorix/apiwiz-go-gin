@@ -262,15 +262,11 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 
 	defer func() {
 		if r := recover(); r != nil {
-			// Log the panic
-			// m.logger.Errorf("Recovered from panic in sendComplianceCheck: %v", r)
 		}
 	}()
 
 	if m.config.DecryptData {
-		// Handle request body decryption
 		if checkDTO.Request.RequestBody != "" {
-			// If we have JSON path configured, use it for targeted decryption
 			if m.config.EncryptedFieldPath != "" {
 				checkDTO.Request.RequestBody = m.decryptJSONField(
 					checkDTO.Request.RequestBody,
@@ -279,7 +275,6 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 					m.config.AES256_IV,
 				)
 			} else {
-				// Fall back to decrypting the entire body
 				plainText, err := GetAESDecrypted(checkDTO.Request.RequestBody, m.config.AES256_KEY, m.config.AES256_IV)
 				if err == nil {
 					checkDTO.Request.RequestBody = plainText
@@ -287,9 +282,7 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 			}
 		}
 
-		// Handle response body decryption
 		if checkDTO.Response.ResponseBody != "" {
-			// If we have JSON path configured, use it for targeted decryption
 			if m.config.EncryptedFieldPath != "" {
 				checkDTO.Response.ResponseBody = m.decryptJSONField(
 					checkDTO.Response.ResponseBody,
@@ -298,7 +291,6 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 					m.config.AES256_IV,
 				)
 			} else {
-				// Fall back to decrypting the entire body
 				plainText, err := GetAESDecrypted(checkDTO.Response.ResponseBody, m.config.AES256_KEY, m.config.AES256_IV)
 				if err == nil {
 					checkDTO.Response.ResponseBody = plainText
