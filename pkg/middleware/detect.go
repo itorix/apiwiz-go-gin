@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -332,7 +333,8 @@ func GetAESDecrypted(encrypted string, transformationKey, initializationVectorSt
 		return "", err
 	}
 
-	block, err := aes.NewCipher([]byte(transformationKey))
+	transformationKeyBytes := getKeyBytes(transformationKey)
+	block, err := aes.NewCipher(transformationKeyBytes)
 	if err != nil {
 		return "", err
 	}
@@ -341,7 +343,8 @@ func GetAESDecrypted(encrypted string, transformationKey, initializationVectorSt
 		return "", fmt.Errorf("ciphertext is not a multiple of the block size")
 	}
 
-	mode := cipher.NewCBCDecrypter(block, []byte(initializationVectorString))
+	initializationVectorBytes := getKeyBytes(initializationVectorString)
+	mode := cipher.NewCBCDecrypter(block, initializationVectorBytes)
 	mode.CryptBlocks(ciphertext, ciphertext)
 
 	plaintext := PKCS5UnPadding(ciphertext)
@@ -356,6 +359,26 @@ func PKCS5UnPadding(src []byte) []byte {
 	return src[:(length - unpadding)]
 }
 
+func getKeyBytes(transformationKey string) []byte {
+	// Check if the transformation key is a hex string
+	hexMatch, _ := regexp.MatchString("^[0-9a-fA-F]+$", transformationKey)
+
+	var keyBytes []byte
+	if hexMatch {
+		// If it's a hex string, use it directly as UTF-8 bytes
+		keyBytes = []byte(transformationKey)
+	} else {
+		// If not a hex string, try to decode it as Base64
+		var err error
+		keyBytes, err = base64.StdEncoding.DecodeString(transformationKey)
+		if err != nil {
+			return []byte(transformationKey)
+		}
+	}
+
+	return keyBytes
+}
+
 func (m *DetectMiddleware) decryptJSONField(jsonStr, jsonPath, keyBase64, ivBase64 string) string {
 	var jsonData map[string]interface{}
 	err := json.Unmarshal([]byte(jsonStr), &jsonData)
@@ -363,10 +386,42 @@ func (m *DetectMiddleware) decryptJSONField(jsonStr, jsonPath, keyBase64, ivBase
 		return jsonStr
 	}
 
-	if strings.HasPrefix(jsonPath, "$.") {
-		fieldName := strings.TrimPrefix(jsonPath, "$.")
+	if !strings.HasPrefix(jsonPath, "$.") {
+		return jsonStr
+	}
 
-		if encryptedValue, ok := jsonData[fieldName].(string); ok {
+	path := strings.TrimPrefix(jsonPath, "$.")
+
+	pathParts := strings.Split(path, ".")
+
+	var currentMap interface{} = jsonData
+	var parent map[string]interface{}
+	var lastKey string
+
+	for i, part := range pathParts {
+		if i == len(pathParts)-1 {
+			lastKey = part
+			if parentMap, ok := currentMap.(map[string]interface{}); ok {
+				parent = parentMap
+			} else {
+				return jsonStr
+			}
+			continue
+		}
+
+		if m, ok := currentMap.(map[string]interface{}); ok {
+			if val, exists := m[part]; exists {
+				currentMap = val
+			} else {
+				return jsonStr
+			}
+		} else {
+			return jsonStr
+		}
+	}
+
+	if parent != nil && lastKey != "" {
+		if encryptedValue, ok := parent[lastKey].(string); ok {
 			decryptedValue, err := GetAESDecrypted(encryptedValue, keyBase64, ivBase64)
 			if err != nil {
 				return jsonStr
