@@ -24,6 +24,10 @@ cfg := &config.Config{
     RequestTimestampHeader: "request-timestamp",
     ResponseTimestampHeader: "response-timestamp",
     GatewayTypeHeader: "gateway-type",
+    DecryptData: true,
+    AES_KEY: "your-aes-key",
+	AES_IV: "your-aes-iv",
+	EncryptedFieldPath: "your-encrypted-data-path"
 }
 ```
 
