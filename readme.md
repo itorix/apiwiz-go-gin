@@ -26,8 +26,8 @@ cfg := &config.Config{
     GatewayTypeHeader: "gateway-type",
     DecryptData: true,
     AES_KEY: "your-aes-key",
-	AES_IV: "your-aes-iv",
-	EncryptedFieldPath: "your-encrypted-data-path"
+    AES_IV: "your-aes-iv",
+    EncryptedFieldPath: "your-encrypted-data-path"
 }
 ```
 
