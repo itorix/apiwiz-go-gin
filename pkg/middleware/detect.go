@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -48,6 +49,7 @@ type DetectRequest struct {
 
 func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		log.Printf("Captured the request")
 		// Capture request body
 		var requestBody []byte
 		if c.Request.Body != nil {
@@ -164,6 +166,7 @@ func (m *DetectMiddleware) Handle() gin.HandlerFunc {
 
 		// Handle compliance check asynchronously
 		go func() {
+			log.Printf("Preparing Compliance Body")
 			m.handleComplianceCheck(data, []byte(detectReq.RequestBody))
 		}()
 	}
@@ -204,6 +207,7 @@ func getPort(host, scheme string) int {
 func (m *DetectMiddleware) handleComplianceCheck(data *RequestData, originalBody []byte) {
 	checkDTO := m.buildComplianceDTO(data, originalBody)
 	if checkDTO == nil {
+		log.Println("checkDTO is nil, skipping compliance check")
 		return
 	}
 	m.sendComplianceCheck(checkDTO)
@@ -264,7 +268,7 @@ func (m *DetectMiddleware) buildComplianceDTO(data *RequestData, originalBody []
 }
 
 func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckDTO) {
-
+	log.Printf("Sending Compliance Data")
 	defer func() {
 		if r := recover(); r != nil {
 		}
@@ -323,6 +327,13 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 		return
 	}
 	defer resp.Body.Close()
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Failed to read response body: %v", err)
+		return
+	}
+	log.Printf("Compliance response status: %s", resp.Status)
+	log.Printf("Compliance response body: %s", string(bodyBytes))
 
 }
 
