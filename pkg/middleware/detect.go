@@ -174,9 +174,9 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 
 			// Store the detect request in the context for the Handle function
 			ctxCopy.Set("detectRequest", detectReq)
-
+			detect.Handle()(ctxCopy)
 			// Call Handle after we have all the response data
-			detect.HandleDetectRequest(detectReq, c.Request, c.Request.Host, c.Request.Proto, c.ClientIP())
+			// detect.HandleDetectRequest(detectReq, c.Request, c.Request.Host, c.Request.Proto, c.ClientIP())
 		}()
 	}
 }
@@ -214,65 +214,65 @@ func (w bodyLogWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-// func (m *DetectMiddleware) Handle() gin.HandlerFunc {
-// 	return func(c *gin.Context) {
+func (m *DetectMiddleware) Handle() gin.HandlerFunc {
+	return func(c *gin.Context) {
 
-// 		// Get the detect request from the context
-// 		detectReqInterface, exists := c.Get("detectRequest")
-// 		if !exists {
-// 			return
-// 		}
+		// Get the detect request from the context
+		detectReqInterface, exists := c.Get("detectRequest")
+		if !exists {
+			return
+		}
 
-// 		detectReq := detectReqInterface.(*DetectRequest)
+		detectReq := detectReqInterface.(*DetectRequest)
 
-// 		// Prepare request data using the captured information
-// 		data := &RequestData{
-// 			Method:       detectReq.Method,
-// 			Path:         c.Request.URL.Path,
-// 			Body:         detectReq.RequestBody,
-// 			Hostname:     c.Request.Host,
-// 			Protocol:     c.Request.Proto,
-// 			Request:      c.Request,
-// 			ResponseBody: detectReq.ResponseBody, // Use the captured response body
-// 			StatusCode:   detectReq.StatusCode,
-// 			Host:         c.Request.Host,
-// 			IP:           c.ClientIP(),
-// 			LocalIP:      c.Request.Host,
-// 		}
+		// Prepare request data using the captured information
+		data := &RequestData{
+			Method:       detectReq.Method,
+			Path:         c.Request.URL.Path,
+			Body:         detectReq.RequestBody,
+			Hostname:     c.Request.Host,
+			Protocol:     c.Request.Proto,
+			Request:      c.Request,
+			ResponseBody: detectReq.ResponseBody, // Use the captured response body
+			StatusCode:   detectReq.StatusCode,
+			Host:         c.Request.Host,
+			IP:           c.ClientIP(),
+			LocalIP:      c.Request.Host,
+		}
 
-// 		// Handle compliance check asynchronously
-// 		go func() {
-// 			log.Printf("Preparing Compliance Body")
-// 			m.handleComplianceCheck(data, []byte(detectReq.RequestBody))
-// 		}()
-// 	}
-// }
-
-func (m *DetectMiddleware) HandleDetectRequest(
-	detectReq *DetectRequest,
-	request *http.Request,
-	host string,
-	protocol string,
-	ip string,
-) {
-	data := &RequestData{
-		Method:       detectReq.Method,
-		Path:         request.URL.Path,
-		Body:         detectReq.RequestBody,
-		Hostname:     host,
-		Protocol:     protocol,
-		Request:      request,
-		ResponseBody: detectReq.ResponseBody,
-		StatusCode:   detectReq.StatusCode,
-		Host:         host,
-		IP:           ip,
-		LocalIP:      host,
+		// Handle compliance check asynchronously
+		go func() {
+			log.Printf("Preparing Compliance Body")
+			m.handleComplianceCheck(data, []byte(detectReq.RequestBody))
+		}()
 	}
-	go func() {
-		log.Printf("Preparing Compliance Body")
-		m.handleComplianceCheck(data, []byte(detectReq.RequestBody))
-	}()
 }
+
+// func (m *DetectMiddleware) HandleDetectRequest(
+// 	detectReq *DetectRequest,
+// 	request *http.Request,
+// 	host string,
+// 	protocol string,
+// 	ip string,
+// ) {
+// 	data := &RequestData{
+// 		Method:       detectReq.Method,
+// 		Path:         request.URL.Path,
+// 		Body:         detectReq.RequestBody,
+// 		Hostname:     host,
+// 		Protocol:     protocol,
+// 		Request:      request,
+// 		ResponseBody: detectReq.ResponseBody,
+// 		StatusCode:   detectReq.StatusCode,
+// 		Host:         host,
+// 		IP:           ip,
+// 		LocalIP:      host,
+// 	}
+// 	go func() {
+// 		log.Printf("Preparing Compliance Body")
+// 		m.handleComplianceCheck(data, []byte(detectReq.RequestBody))
+// 	}()
+// }
 
 type RequestData struct {
 	Method       string
