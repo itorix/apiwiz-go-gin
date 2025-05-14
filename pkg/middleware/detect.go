@@ -14,14 +14,85 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/itorix/apiwiz-go-gin/pkg/config"
 	"github.com/itorix/apiwiz-go-gin/pkg/models"
 )
+
+var originalTransport http.RoundTripper
+
+// Thread-local storage for request headers
+var requestHeadersStore sync.Map // maps goroutine ID to http.Header
+
+func init() {
+	// Save the original default transport
+	originalTransport = http.DefaultTransport
+
+	// Replace with our custom transport
+	http.DefaultTransport = &HeaderInjectingTransport{
+		Base: originalTransport,
+	}
+}
+
+// Custom transport that injects headers
+type HeaderInjectingTransport struct {
+	Base http.RoundTripper
+}
+
+// RoundTrip implements the http.RoundTripper interface
+func (t *HeaderInjectingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Get the current goroutine ID
+	gID := getGoroutineID()
+
+	// Look up headers for this goroutine
+	if headersVal, ok := requestHeadersStore.Load(gID); ok {
+		if headers, ok := headersVal.(http.Header); ok {
+			for name, values := range headers {
+
+				for _, value := range values {
+					if req.Header.Get(name) == "" { // Only add if not already set
+						req.Header.Add(name, value)
+					}
+				}
+
+			}
+		}
+	}
+
+	return t.Base.RoundTrip(req)
+}
+
+// Set the current request headers for the current goroutine
+func SetCurrentRequestHeaders(headers http.Header) {
+	gID := getGoroutineID()
+	headersCopy := make(http.Header)
+	for k, v := range headers {
+		headersCopy[k] = v
+	}
+	requestHeadersStore.Store(gID, headersCopy)
+}
+
+// Clear the current request headers
+func ClearCurrentRequestHeaders() {
+	gID := getGoroutineID()
+	requestHeadersStore.Delete(gID)
+}
+
+// Function to get the current goroutine ID
+func getGoroutineID() uint64 {
+	b := make([]byte, 64)
+	b = b[:runtime.Stack(b, false)]
+	b = bytes.TrimPrefix(b, []byte("goroutine "))
+	b = b[:bytes.IndexByte(b, ' ')]
+	n, _ := strconv.ParseUint(string(b), 10, 64)
+	return n
+}
 
 // Custom response writer to capture the response
 type responseWriter struct {
@@ -49,6 +120,7 @@ type DetectRequest struct {
 
 func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 	return func(c *gin.Context) {
+
 		log.Printf("Captured the request")
 		// Capture request body
 		var requestBody []byte
@@ -79,8 +151,12 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 			c.Request.Header.Set(detect.config.RequestTimestampHeader, strconv.FormatInt(time.Now().UnixMilli(), 10))
 		}
 
+		SetCurrentRequestHeaders(c.Request.Header)
+
 		// Process the request through the chain
 		c.Next()
+
+		ClearCurrentRequestHeaders()
 
 		ctxCopy := c.Copy()
 
@@ -100,7 +176,7 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 			ctxCopy.Set("detectRequest", detectReq)
 
 			// Call Handle after we have all the response data
-			detect.Handle()(ctxCopy)
+			detect.HandleDetectRequest(detectReq, c.Request, c.Request.Host, c.Request.Proto, c.ClientIP())
 		}()
 	}
 }
@@ -138,38 +214,64 @@ func (w bodyLogWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-func (m *DetectMiddleware) Handle() gin.HandlerFunc {
-	return func(c *gin.Context) {
+// func (m *DetectMiddleware) Handle() gin.HandlerFunc {
+// 	return func(c *gin.Context) {
 
-		// Get the detect request from the context
-		detectReqInterface, exists := c.Get("detectRequest")
-		if !exists {
-			return
-		}
+// 		// Get the detect request from the context
+// 		detectReqInterface, exists := c.Get("detectRequest")
+// 		if !exists {
+// 			return
+// 		}
 
-		detectReq := detectReqInterface.(*DetectRequest)
+// 		detectReq := detectReqInterface.(*DetectRequest)
 
-		// Prepare request data using the captured information
-		data := &RequestData{
-			Method:       detectReq.Method,
-			Path:         c.Request.URL.Path,
-			Body:         detectReq.RequestBody,
-			Hostname:     c.Request.Host,
-			Protocol:     c.Request.Proto,
-			Request:      c.Request,
-			ResponseBody: detectReq.ResponseBody, // Use the captured response body
-			StatusCode:   detectReq.StatusCode,
-			Host:         c.Request.Host,
-			IP:           c.ClientIP(),
-			LocalIP:      c.Request.Host,
-		}
+// 		// Prepare request data using the captured information
+// 		data := &RequestData{
+// 			Method:       detectReq.Method,
+// 			Path:         c.Request.URL.Path,
+// 			Body:         detectReq.RequestBody,
+// 			Hostname:     c.Request.Host,
+// 			Protocol:     c.Request.Proto,
+// 			Request:      c.Request,
+// 			ResponseBody: detectReq.ResponseBody, // Use the captured response body
+// 			StatusCode:   detectReq.StatusCode,
+// 			Host:         c.Request.Host,
+// 			IP:           c.ClientIP(),
+// 			LocalIP:      c.Request.Host,
+// 		}
 
-		// Handle compliance check asynchronously
-		go func() {
-			log.Printf("Preparing Compliance Body")
-			m.handleComplianceCheck(data, []byte(detectReq.RequestBody))
-		}()
+// 		// Handle compliance check asynchronously
+// 		go func() {
+// 			log.Printf("Preparing Compliance Body")
+// 			m.handleComplianceCheck(data, []byte(detectReq.RequestBody))
+// 		}()
+// 	}
+// }
+
+func (m *DetectMiddleware) HandleDetectRequest(
+	detectReq *DetectRequest,
+	request *http.Request,
+	host string,
+	protocol string,
+	ip string,
+) {
+	data := &RequestData{
+		Method:       detectReq.Method,
+		Path:         request.URL.Path,
+		Body:         detectReq.RequestBody,
+		Hostname:     host,
+		Protocol:     protocol,
+		Request:      request,
+		ResponseBody: detectReq.ResponseBody,
+		StatusCode:   detectReq.StatusCode,
+		Host:         host,
+		IP:           ip,
+		LocalIP:      host,
 	}
+	go func() {
+		log.Printf("Preparing Compliance Body")
+		m.handleComplianceCheck(data, []byte(detectReq.RequestBody))
+	}()
 }
 
 type RequestData struct {
