@@ -310,11 +310,13 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 
 	jsonData, err := json.Marshal(checkDTO)
 	if err != nil {
+		log.Printf("JSON Initialization error: %v", err)
 		return
 	}
 
 	req, err := http.NewRequest("POST", m.config.DetectAPI, bytes.NewBuffer(jsonData))
 	if err != nil {
+		log.Printf("Request Initialization error: %v", err)
 		return
 	}
 
@@ -324,6 +326,7 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 
 	resp, err := m.client.Do(req)
 	if err != nil {
+		log.Printf("Compliance Request failed: %v", err)
 		return
 	}
 	defer resp.Body.Close()
