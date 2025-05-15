@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-resty/resty/v2"
 	"github.com/itorix/apiwiz-go-gin/pkg/config"
 	"github.com/itorix/apiwiz-go-gin/pkg/models"
 )
@@ -30,6 +31,8 @@ var originalTransport http.RoundTripper
 // Thread-local storage for request headers
 var requestHeadersStore sync.Map // maps goroutine ID to http.Header
 
+var originalRestyNew *resty.Client
+
 func init() {
 	// Save the original default transport
 	originalTransport = http.DefaultTransport
@@ -38,6 +41,13 @@ func init() {
 	http.DefaultTransport = &HeaderInjectingTransport{
 		Base: originalTransport,
 	}
+
+	restyClient := resty.New()
+	restyClient.SetTransport(&HeaderInjectingTransport{
+		Base: originalTransport,
+	})
+	// Optionally save it if needed globally
+	originalRestyNew = restyClient
 }
 
 // Custom transport that injects headers
