@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/go-resty/resty/v2"
 	"github.com/itorix/apiwiz-go-gin/pkg/config"
 	"github.com/itorix/apiwiz-go-gin/pkg/models"
 )
@@ -31,9 +30,8 @@ var originalTransport http.RoundTripper
 // Thread-local storage for request headers
 var requestHeadersStore sync.Map // maps goroutine ID to http.Header
 
-var originalRestyNew *resty.Client
-
 func init() {
+
 	// Save the original default transport
 	originalTransport = http.DefaultTransport
 
@@ -42,12 +40,6 @@ func init() {
 		Base: originalTransport,
 	}
 
-	restyClient := resty.New()
-	restyClient.SetTransport(&HeaderInjectingTransport{
-		Base: originalTransport,
-	})
-	// Optionally save it if needed globally
-	originalRestyNew = restyClient
 }
 
 // Custom transport that injects headers
@@ -66,7 +58,7 @@ func (t *HeaderInjectingTransport) RoundTrip(req *http.Request) (*http.Response,
 			for name, values := range headers {
 
 				for _, value := range values {
-					if req.Header.Get(name) == "" { // Only add if not already set
+					if req.Header.Get(name) == "" {
 						req.Header.Add(name, value)
 					}
 				}
@@ -79,11 +71,13 @@ func (t *HeaderInjectingTransport) RoundTrip(req *http.Request) (*http.Response,
 }
 
 // Set the current request headers for the current goroutine
-func SetCurrentRequestHeaders(headers http.Header) {
+func SetCurrentRequestHeaders(headers http.Header, detect *DetectMiddleware) {
 	gID := getGoroutineID()
 	headersCopy := make(http.Header)
 	for k, v := range headers {
-		headersCopy[k] = v
+		if strings.EqualFold(k, detect.config.TraceIDHeader) || strings.EqualFold(k, detect.config.SpanIDHeader) {
+			headersCopy[k] = v
+		}
 	}
 	requestHeadersStore.Store(gID, headersCopy)
 }
@@ -161,7 +155,7 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 			c.Request.Header.Set(detect.config.RequestTimestampHeader, strconv.FormatInt(time.Now().UnixMilli(), 10))
 		}
 
-		SetCurrentRequestHeaders(c.Request.Header)
+		SetCurrentRequestHeaders(c.Request.Header, detect)
 
 		// Process the request through the chain
 		c.Next()
