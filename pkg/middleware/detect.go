@@ -179,8 +179,6 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 			// Store the detect request in the context for the Handle function
 			ctxCopy.Set("detectRequest", detectReq)
 			detect.Handle()(ctxCopy)
-			// Call Handle after we have all the response data
-			// detect.HandleDetectRequest(detectReq, c.Request, c.Request.Host, c.Request.Proto, c.ClientIP())
 		}()
 	}
 }
@@ -251,32 +249,6 @@ func (m *DetectMiddleware) Handle() gin.HandlerFunc {
 		}()
 	}
 }
-
-// func (m *DetectMiddleware) HandleDetectRequest(
-// 	detectReq *DetectRequest,
-// 	request *http.Request,
-// 	host string,
-// 	protocol string,
-// 	ip string,
-// ) {
-// 	data := &RequestData{
-// 		Method:       detectReq.Method,
-// 		Path:         request.URL.Path,
-// 		Body:         detectReq.RequestBody,
-// 		Hostname:     host,
-// 		Protocol:     protocol,
-// 		Request:      request,
-// 		ResponseBody: detectReq.ResponseBody,
-// 		StatusCode:   detectReq.StatusCode,
-// 		Host:         host,
-// 		IP:           ip,
-// 		LocalIP:      host,
-// 	}
-// 	go func() {
-// 		log.Printf("Preparing Compliance Body")
-// 		m.handleComplianceCheck(data, []byte(detectReq.RequestBody))
-// 	}()
-// }
 
 type RequestData struct {
 	Method       string
