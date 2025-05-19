@@ -30,7 +30,13 @@ var originalTransport http.RoundTripper
 // Thread-local storage for request headers
 var requestHeadersStore sync.Map // maps goroutine ID to http.Header
 
+// Global headers to be propagated to all goroutines
+var globalHeaders http.Header
+var globalHeadersMutex sync.RWMutex
+
 func init() {
+	// Initialize global headers
+	globalHeaders = make(http.Header)
 
 	// Save the original default transport
 	originalTransport = http.DefaultTransport
@@ -39,7 +45,6 @@ func init() {
 	http.DefaultTransport = &HeaderInjectingTransport{
 		Base: originalTransport,
 	}
-
 }
 
 // Custom transport that injects headers
@@ -52,20 +57,29 @@ func (t *HeaderInjectingTransport) RoundTrip(req *http.Request) (*http.Response,
 	// Get the current goroutine ID
 	gID := getGoroutineID()
 
-	// Look up headers for this goroutine
+	// First try goroutine-specific headers
 	if headersVal, ok := requestHeadersStore.Load(gID); ok {
 		if headers, ok := headersVal.(http.Header); ok {
 			for name, values := range headers {
-
 				for _, value := range values {
 					if req.Header.Get(name) == "" {
 						req.Header.Add(name, value)
 					}
 				}
-
 			}
 		}
 	}
+
+	// Then apply global headers (they have lower priority than goroutine-specific ones)
+	globalHeadersMutex.RLock()
+	for name, values := range globalHeaders {
+		for _, value := range values {
+			if req.Header.Get(name) == "" {
+				req.Header.Add(name, value)
+			}
+		}
+	}
+	globalHeadersMutex.RUnlock()
 
 	return t.Base.RoundTrip(req)
 }
@@ -77,7 +91,47 @@ func SetCurrentRequestHeaders(headers http.Header, detect *DetectMiddleware) {
 	for k, v := range headers {
 		if strings.EqualFold(k, detect.config.TraceIDHeader) || strings.EqualFold(k, detect.config.SpanIDHeader) {
 			headersCopy[k] = v
+
+			// Also store important headers globally for all goroutines
+			globalHeadersMutex.Lock()
+			globalHeaders[k] = v
+			globalHeadersMutex.Unlock()
 		}
+	}
+	requestHeadersStore.Store(gID, headersCopy)
+}
+
+// Get the current request headers to propagate to a new goroutine
+func GetHeadersForPropagation() http.Header {
+	// Create a combined header from both sources
+	result := make(http.Header)
+
+	// First get global headers
+	globalHeadersMutex.RLock()
+	for k, v := range globalHeaders {
+		result[k] = v
+	}
+	globalHeadersMutex.RUnlock()
+
+	// Then get goroutine-specific headers
+	gID := getGoroutineID()
+	if headersVal, ok := requestHeadersStore.Load(gID); ok {
+		if headers, ok := headersVal.(http.Header); ok {
+			for k, v := range headers {
+				result[k] = v
+			}
+		}
+	}
+
+	return result
+}
+
+// Propagate headers to a new goroutine
+func PropagateHeaders(headers http.Header) {
+	gID := getGoroutineID()
+	headersCopy := make(http.Header)
+	for k, v := range headers {
+		headersCopy[k] = v
 	}
 	requestHeadersStore.Store(gID, headersCopy)
 }
@@ -121,10 +175,8 @@ type DetectRequest struct {
 }
 
 // Corrected middleware implementation
-
 func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 	return func(c *gin.Context) {
-
 		log.Printf("Captured the request")
 		// Capture request body
 		var requestBody []byte
@@ -162,7 +214,13 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 
 		ctxCopy := c.Copy()
 
+		// Get headers to propagate before starting the goroutine
+		headersToPropagrate := GetHeadersForPropagation()
+
 		go func() {
+			// Propagate headers to this new goroutine
+			PropagateHeaders(headersToPropagrate)
+
 			// Now we have access to both request and response data
 			detectReq := &DetectRequest{
 				Method:       c.Request.Method,
@@ -177,6 +235,9 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 			// Store the detect request in the context for the Handle function
 			ctxCopy.Set("detectRequest", detectReq)
 			detect.Handle()(ctxCopy)
+
+			// Clean up after processing
+			ClearCurrentRequestHeaders()
 		}()
 
 		ClearCurrentRequestHeaders()
@@ -218,7 +279,6 @@ func (w bodyLogWriter) Write(b []byte) (int, error) {
 
 func (m *DetectMiddleware) Handle() gin.HandlerFunc {
 	return func(c *gin.Context) {
-
 		// Get the detect request from the context
 		detectReqInterface, exists := c.Get("detectRequest")
 		if !exists {
@@ -242,10 +302,19 @@ func (m *DetectMiddleware) Handle() gin.HandlerFunc {
 			LocalIP:      c.Request.Host,
 		}
 
+		// Get headers to propagate before starting the goroutine
+		headersToPropagrate := GetHeadersForPropagation()
+
 		// Handle compliance check asynchronously
 		go func() {
+			// Propagate headers to this new goroutine
+			PropagateHeaders(headersToPropagrate)
+
 			log.Printf("Preparing Compliance Body")
 			m.handleComplianceCheck(data, []byte(detectReq.RequestBody))
+
+			// Clean up after processing
+			ClearCurrentRequestHeaders()
 		}()
 	}
 }
