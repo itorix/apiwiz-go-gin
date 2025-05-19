@@ -160,8 +160,6 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 		// Process the request through the chain
 		c.Next()
 
-		ClearCurrentRequestHeaders()
-
 		ctxCopy := c.Copy()
 
 		go func() {
@@ -180,6 +178,8 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 			ctxCopy.Set("detectRequest", detectReq)
 			detect.Handle()(ctxCopy)
 		}()
+
+		ClearCurrentRequestHeaders()
 	}
 }
 
