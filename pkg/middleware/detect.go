@@ -89,14 +89,14 @@ func SetCurrentRequestHeaders(headers http.Header, detect *DetectMiddleware) {
 	gID := getGoroutineID()
 	headersCopy := make(http.Header)
 	for k, v := range headers {
+		// Store important headers globally for all goroutines
 		if strings.EqualFold(k, detect.config.TraceIDHeader) || strings.EqualFold(k, detect.config.SpanIDHeader) {
-			headersCopy[k] = v
-
-			// Also store important headers globally for all goroutines
 			globalHeadersMutex.Lock()
 			globalHeaders[k] = v
 			globalHeadersMutex.Unlock()
 		}
+		// Copy all headers for the current goroutine
+		headersCopy[k] = v
 	}
 	requestHeadersStore.Store(gID, headersCopy)
 }
@@ -174,7 +174,7 @@ type DetectRequest struct {
 	StatusCode   int
 }
 
-// Corrected middleware implementation
+// Improved middleware implementation
 func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		log.Printf("Captured the request")
@@ -193,6 +193,7 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 		}
 		c.Writer = customWriter
 
+		// Add tracing headers if enabled
 		if detect.config.EnableTracing {
 			traceID := c.GetHeader(detect.config.TraceIDHeader)
 			spanID := c.GetHeader(detect.config.SpanIDHeader)
@@ -207,16 +208,19 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 			c.Request.Header.Set(detect.config.RequestTimestampHeader, strconv.FormatInt(time.Now().UnixMilli(), 10))
 		}
 
+		// Store all headers globally and in the current goroutine context
 		SetCurrentRequestHeaders(c.Request.Header, detect)
 
 		// Process the request through the chain
 		c.Next()
 
+		// Copy context to use in goroutine
 		ctxCopy := c.Copy()
 
-		// Get headers to propagate before starting the goroutine
+		// Get complete headers to propagate before starting the goroutine
 		headersToPropagrate := GetHeadersForPropagation()
 
+		// Launch goroutine to process the request asynchronously
 		go func() {
 			// Propagate headers to this new goroutine
 			PropagateHeaders(headersToPropagrate)
@@ -225,7 +229,7 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 			detectReq := &DetectRequest{
 				Method:       c.Request.Method,
 				URL:          c.Request.URL.String(),
-				Headers:      c.Request.Header,
+				Headers:      headersToPropagrate, // Use propagated headers
 				QueryParams:  c.Request.URL.Query(),
 				RequestBody:  string(requestBody),
 				ResponseBody: customWriter.body.String(), // Response body is now available
@@ -240,6 +244,7 @@ func ApiwizDetectMiddleware(detect *DetectMiddleware) gin.HandlerFunc {
 			ClearCurrentRequestHeaders()
 		}()
 
+		// Clean up in the parent goroutine
 		ClearCurrentRequestHeaders()
 	}
 }
@@ -282,6 +287,7 @@ func (m *DetectMiddleware) Handle() gin.HandlerFunc {
 		// Get the detect request from the context
 		detectReqInterface, exists := c.Get("detectRequest")
 		if !exists {
+			log.Println("detectRequest not found in context")
 			return
 		}
 
@@ -302,12 +308,12 @@ func (m *DetectMiddleware) Handle() gin.HandlerFunc {
 			LocalIP:      c.Request.Host,
 		}
 
-		// Get headers to propagate before starting the goroutine
+		// Get complete headers to propagate before starting the goroutine
 		headersToPropagrate := GetHeadersForPropagation()
 
 		// Handle compliance check asynchronously
 		go func() {
-			// Propagate headers to this new goroutine
+			// Make sure to propagate headers to this new goroutine
 			PropagateHeaders(headersToPropagrate)
 
 			log.Printf("Preparing Compliance Body")
@@ -418,6 +424,7 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 	log.Printf("Sending Compliance Data")
 	defer func() {
 		if r := recover(); r != nil {
+			log.Printf("Recovered from panic in sendComplianceCheck: %v", r)
 		}
 	}()
 
@@ -455,6 +462,10 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 		}
 	}
 
+	log.Printf("Compliance Request URL : %s %s", checkDTO.Request.Hostname, checkDTO.Request.Verb)
+	log.Printf("Compliance Request Trace : %s", checkDTO.Request.HeaderParams[m.config.TraceIDHeader])
+	log.Printf("Compliance Request Span: %s", checkDTO.Request.HeaderParams[m.config.SpanIDHeader])
+	log.Printf("Compliance Request ParentSpan: %s", checkDTO.Request.HeaderParams[m.config.ParentSpanIDHeader])
 	jsonData, err := json.Marshal(checkDTO)
 	if err != nil {
 		log.Printf("JSON Initialization error: %v", err)
@@ -471,6 +482,15 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 	req.Header.Set("x-client-secret", m.config.APIKey)
 	req.Header.Set("x-client-id", m.config.WorkspaceID)
 
+	// Add any propagated trace headers
+	headersToPropagrate := GetHeadersForPropagation()
+	for name, values := range headersToPropagrate {
+		if req.Header.Get(name) == "" && (strings.EqualFold(name, m.config.TraceIDHeader) ||
+			strings.EqualFold(name, m.config.SpanIDHeader) ||
+			strings.EqualFold(name, m.config.ParentSpanIDHeader)) {
+			req.Header.Add(name, values[0])
+		}
+	}
 	resp, err := m.client.Do(req)
 	if err != nil {
 		log.Printf("Compliance Request failed: %v", err)
@@ -484,11 +504,9 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 	}
 	log.Printf("Compliance response status: %s", resp.Status)
 	log.Printf("Compliance response body: %s", string(bodyBytes))
-
 }
 
 func GetAESDecrypted(encrypted string, transformationKey, initializationVectorString string) (string, error) {
-
 	ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
 	if err != nil {
 		return "", err
