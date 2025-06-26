@@ -15,6 +15,7 @@ Add the following configuration to your application:
 ```go
 cfg := &config.Config{
     APIKey:      "your-api-key",
+    IndexName:   "your-index-name"
     WorkspaceID: "your-workspace-id",
     DetectAPI:   "your-detect-api-url",
     EnableTracing: true,

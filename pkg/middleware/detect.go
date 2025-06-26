@@ -480,6 +480,7 @@ func (m *DetectMiddleware) sendComplianceCheck(checkDTO *models.ComplianceCheckD
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-client-secret", m.config.APIKey)
+	req.Header.Set("index-name", m.config.IndexName)
 	req.Header.Set("x-client-id", m.config.WorkspaceID)
 
 	// Add any propagated trace headers

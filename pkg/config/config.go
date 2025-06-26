@@ -2,6 +2,7 @@ package config
 
 type Config struct {
 	APIKey                  string
+	IndexName               string
 	WorkspaceID             string
 	DetectAPI               string
 	EnableTracing           bool
